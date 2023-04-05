@@ -13,7 +13,7 @@ import numpy as np
 
 class Canvas(QFrame):
 
-    def __init__(self, length=50, width=5, height=7, parent=None):
+    def __init__(self, length=50, width=6, height=4, parent=None):
         super().__init__(parent)
         self.length = length
 

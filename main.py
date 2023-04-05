@@ -1,6 +1,6 @@
 import sys
 
-from PySide6.QtCore    import QByteArray, QTimer, QIODevice
+from PySide6.QtCore    import QByteArray, QElapsedTimer, QIODevice
 from PySide6.QtWidgets import (
     QWidget, QMainWindow, QGridLayout,
     QLabel, QPushButton, QLineEdit, QApplication
@@ -9,100 +9,103 @@ from PySide6.QtWidgets import (
 from canvas import Canvas
 from port   import PortDialog
 
-INTERVAL = 500
-
-def pid_format(kp, ki, kd):
-    return f",{kp},{ki},{kd}"
+def pid_format(kp, ki, kd, sp):
+    return f"{sp}"
 
 class MainWindow(QMainWindow):
     serial = None
-    set_pt = 0
+    set_pt = 10.0 # for now
     data = 0.0
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.resize(640, 480)
+        self.resize(1000, 600)
         self.centralwidget = QWidget(self)
         self.gridLayout = QGridLayout(self.centralwidget)
 
         self.label_kp = QLabel(self.centralwidget)
         self.gridLayout.addWidget(self.label_kp, 0, 0, 1, 1)
-
         self.label_ki = QLabel(self.centralwidget)
         self.gridLayout.addWidget(self.label_ki, 1, 0, 1, 1)
-
         self.label_kd = QLabel(self.centralwidget)
         self.gridLayout.addWidget(self.label_kd, 2, 0, 1, 1)
+        self.label_sp = QLabel(self.centralwidget)
+        self.gridLayout.addWidget(self.label_sp, 3, 0, 1, 1)
 
         self.lineEdit_kp = QLineEdit(self.centralwidget)
         self.gridLayout.addWidget(self.lineEdit_kp, 0, 1, 1, 1)
-
         self.lineEdit_ki = QLineEdit(self.centralwidget)
         self.gridLayout.addWidget(self.lineEdit_ki, 1, 1, 1, 1)
-
         self.lineEdit_kd = QLineEdit(self.centralwidget)
         self.gridLayout.addWidget(self.lineEdit_kd, 2, 1, 1, 1)
+        self.lineEdit_sp = QLineEdit(self.centralwidget)
+        self.gridLayout.addWidget(self.lineEdit_sp, 3, 1, 1, 1)
 
 
         self.canvas = Canvas(parent=self)
-        self.gridLayout.addWidget(self.canvas, 0, 2, 5, 5)
-
+        self.gridLayout.addWidget(self.canvas, 0, 3, 5, 9)
 
         self.button_send = QPushButton(self.centralwidget)
         self.gridLayout.addWidget(self.button_send, 5, 0, 1, 1)
-
         self.label_port = QLabel(self.centralwidget)
         self.gridLayout.addWidget(self.label_port, 5, 1, 1, 1)
-
         self.button_port = QPushButton(self.centralwidget)
         self.gridLayout.addWidget(self.button_port, 5, 2, 1, 1)
-
         self.button_run = QPushButton(self.centralwidget)
-        self.gridLayout.addWidget(self.button_run, 5, 6, 1, 1)
+        self.gridLayout.addWidget(self.button_run, 5, 11, 1, 1)
 
 
         self.setCentralWidget(self.centralwidget)
 
         self.setUpText()
         self.button_run.setEnabled(False)
+        # can't set pid now
+        self.lineEdit_kp.setEnabled(False)
+        self.lineEdit_ki.setEnabled(False)
+        self.lineEdit_kd.setEnabled(False)
+        # won't send now
+        self.button_send.setEnabled(False)
+
         print("GUI started")
 
         self.button_send.clicked.connect(self.onSend)
         self.button_port.clicked.connect(self.onConnect)
         self.button_run.clicked.connect(self.onRun)
 
-        self.interval = INTERVAL
-        self.timer = QTimer(self)
-        self.timer.setInterval(self.interval)
-        self.timer.timeout.connect(self.onTimeout)
-        self.i = 0
+        self.timer = QElapsedTimer()
+        self.is_running = False
 
     def setUpText(self):
         self.setWindowTitle("tuning")
         self.label_kp.setText("Kp")
         self.label_ki.setText("Ki")
         self.label_kd.setText("Kd")
+        self.label_sp.setText("Set Point")
+        self.lineEdit_kp.setText("0")
+        self.lineEdit_ki.setText("0")
+        self.lineEdit_kd.setText("0")
+        self.lineEdit_sp.setText("0")
         self.button_send.setText("Send")
         self.label_port.setText("")
         self.button_port.setText("Connect")
         self.button_run.setText("Start")
 
     def onRun(self):
-        if self.timer.isActive():
+        if self.is_running:
             self.stop()
         else:
             self.start()
 
     def stop(self):
-        self.timer.stop()
         print('Stopped')
         self.button_run.setText('Start')
-        self.i = 0
+        self.is_running = False
 
     def start(self):
-        self.timer.start()
         print('Started')
         self.button_run.setText('Stop')
+        self.is_running = True
+        self.timer.start()
         self.canvas.reset()
 
     def onConnect(self):
@@ -114,35 +117,36 @@ class MainWindow(QMainWindow):
             if serial.open(QIODevice.OpenModeFlag.ReadWrite):
                 self.serial = serial
                 self.label_port.setText(name)
-                print(f"Serial connected: {name}")
-
                 self.button_run.setEnabled(True)
+                self.serial.readyRead.connect(self.onReadyRead)
+                print(f"Serial connected: {name}")
             else:
                 self.serial = None
+                self.button_run.setEnabled(False)
                 print(f'Failed to open serial port: {name}')
 
-                self.button_run.setEnabled(False)
-
-    def onTimeout(self):
-        self.i += 1
-        dur = self.interval*self.i
-
-        str = self.serial.readAll().data().decode()
-        print(f'Serial read "{str}"')
-        if len(str) > 0:
-            self.data = float(str)
+    def onReadyRead(self):
+        dur = self.timer.elapsed()
+        msg = self.serial.readAll().data().decode()
+        if len(msg) > 0:
+            self.data = float(msg)
 
         self.canvas.animate(dur, self.data, self.set_pt)
+
+        print(f'Serial read "{msg}"')
 
     def onSend(self):
         kp = float(self.lineEdit_kp.text())
         ki = float(self.lineEdit_ki.text())
         kd = float(self.lineEdit_kd.text())
-        text = pid_format(kp, ki, kd)
-        print(f'Serial sent text "{text}"')
+        self.set_pt = float(self.lineEdit_sp.text())
+        text = pid_format(kp, ki, kd, self.set_pt)
+
         if self.serial is not None:
             qba = QByteArray(text.encode("utf-8"))
             self.serial.write(qba)
+
+        print(f'Serial sent text "{text}"')
 
     def closeEvent(self, event):
         if self.serial is not None:
