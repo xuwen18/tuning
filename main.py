@@ -6,6 +6,8 @@ from PySide6.QtWidgets import (
     QLabel, QPushButton, QLineEdit, QApplication
 )
 
+import parse
+
 from canvas import Canvas
 from port   import PortDialog
 
@@ -14,7 +16,9 @@ def pid_format(kp, ki, kd, sp):
 
 class MainWindow(QMainWindow):
     serial = None
-    set_pt = 10.0 # for now
+    set_pt = 15.0 # for now
+
+    buffer = QByteArray(b"")
     data = 0.0
 
     def __init__(self, parent=None):
@@ -100,11 +104,13 @@ class MainWindow(QMainWindow):
         print('Stopped')
         self.button_run.setText('Start')
         self.is_running = False
+        self.serial.readyRead.disconnect(self.onReadyRead)
 
     def start(self):
         print('Started')
         self.button_run.setText('Stop')
         self.is_running = True
+        self.serial.readyRead.connect(self.onReadyRead)
         self.timer.start()
         self.canvas.reset()
 
@@ -118,7 +124,6 @@ class MainWindow(QMainWindow):
                 self.serial = serial
                 self.label_port.setText(name)
                 self.button_run.setEnabled(True)
-                self.serial.readyRead.connect(self.onReadyRead)
                 print(f"Serial connected: {name}")
             else:
                 self.serial = None
@@ -126,14 +131,24 @@ class MainWindow(QMainWindow):
                 print(f'Failed to open serial port: {name}')
 
     def onReadyRead(self):
-        dur = self.timer.elapsed()
-        msg = self.serial.readAll().data().decode()
-        if len(msg) > 0:
-            self.data = float(msg)
+        self.buffer.append(self.serial.readAll())
+        idx_l = self.buffer.lastIndexOf(b"[")
+        idx_r = self.buffer.lastIndexOf(b"]")
+        if idx_l != -1 and idx_r != -1 and idx_l < idx_r:
+            msg = self.buffer.mid(1+idx_l, idx_r-idx_l-1)
+            msg = msg.data().decode()
+            print(f'Serial read "{msg}"')
+            rslt = parse.parse("{:f}", msg)
+            if rslt is not None:
+                self.data = rslt[0]
+            else:
+                print("Something wrong")
+            self.buffer = QByteArray(b"")
 
-        self.canvas.animate(dur, self.data, self.set_pt)
+            dur = self.timer.elapsed()
+            self.canvas.animate(dur, self.data, self.set_pt)
 
-        print(f'Serial read "{msg}"')
+        # print(f'Serial read "{msg}"')
 
     def onSend(self):
         kp = float(self.lineEdit_kp.text())
