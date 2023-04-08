@@ -70,5 +70,6 @@ class PortDialog(QDialog):
             return None
         return QSerialPort(
             dialog.selected, parent,
-            baudRate=600#QSerialPort.BaudRate.Baud9600
+            baudRate=QSerialPort.BaudRate.Baud4800,
+            stopBits=QSerialPort.StopBits.TwoStop
         )
