@@ -15,12 +15,12 @@ On Windows
 ```
 
 
-1. Install required libraries
+3. Install required libraries
 ```
 pip install -r .\requirements.txt
 ```
 
-1. Run the program
+4. Run the program
 ```
 python main.py
 ```
