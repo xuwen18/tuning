@@ -10,9 +10,12 @@ from PySide6.QtWidgets import (
 from canvas import Canvas
 from port   import PortDialog
 
+
 STOP_MS = 12*1000
-CSV_NAME = "700b.csv"
-SET_PT = 700
+
+SET_PT = 500
+
+CSV_FILE = f"{SET_PT}.csv"
 
 def pid_format(kp, ki, kd, sp):
     return ("0000000"+f"{sp:2.4f}")[-7:]
@@ -110,7 +113,7 @@ class MainWindow(QMainWindow):
         self.is_running = False
         self.serial.readyRead.disconnect(self.onReadyRead)
         self.serial.errorOccurred.disconnect(self.onErrorOccurred)
-        self.saveCSV(CSV_NAME)
+        self.saveCSV(CSV_FILE)
 
     def start(self):
         print('Started')
